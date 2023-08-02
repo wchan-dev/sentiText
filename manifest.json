@@ -3,11 +3,17 @@
   "name": "SentiText",
   "author": "Soejun",
   "version": "1.0.0",
-  "permissions": ["contextMenus", "storage"],
+  "permissions": ["activeTab", "contextMenus", "storage"],
   "background": {
     "service_worker": "src/background.js"
   },
   "action": {
     "default_popup": "index.html"
-  }
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://www.reddit.com/r/*"],
+      "js": ["src/contentScript.js"]
+    }
+  ]
 }
