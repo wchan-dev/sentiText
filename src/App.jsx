@@ -1,7 +1,16 @@
 import React, { useEffect, useState } from "react";
 // import * as vader from "vader-sentiment";
 import { sentimentScoreToText } from "./utils/sentimentScoreToText";
-import { Box, Flex, Heading, Stack, Text, VStack } from "@chakra-ui/react";
+import {
+  Box,
+  Button,
+  Flex,
+  Heading,
+  Stack,
+  Text,
+  Tooltip,
+  VStack,
+} from "@chakra-ui/react";
 import { usePlotColors } from "./utils/useColors";
 import { populateLayout } from "./utils/layout";
 import Plot from "react-plotly.js";
@@ -15,6 +24,19 @@ function App() {
   const [sentimentsCompound, setSentimentsCompound] = useState([]);
   const [threadSentiment, setThreadSentiment] = useState("");
   const [threadSentimentColor, setThreadSentimentColor] = useState("");
+  const [threadTitle, setThreadTitle] = useState("");
+
+  const [vader, setVader] = useState(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    // dynamically import vader-sentiment
+    import("vader-sentiment")
+      .then((vaderModule) => {
+        setVader(vaderModule);
+      })
+      .catch((error) => console.log(error));
+  }, []);
 
   const { textColor, bgColor } = usePlotColors();
 
@@ -62,51 +84,115 @@ function App() {
     };
   });
 
-  const [vader, setVader] = useState(null);
-
   useEffect(() => {
-    // dynamically import vader-sentiment
-    import("vader-sentiment")
-      .then((vaderModule) => {
-        setVader(vaderModule);
-      })
-      .catch((error) => console.log(error));
+    setIsLoading(true);
+    chrome.storage.local.get(["title"], function (result) {
+      setThreadTitle(result.title);
+      setIsLoading(false);
+    });
   }, []);
 
   useEffect(() => {
-    if (vader) {
-      chrome.storage.local.get(["selectedText"], function (result) {
-        setSelectedText(result.selectedText || "");
-        const intensity = vader.SentimentIntensityAnalyzer.polarity_scores(
-          result.selectedText
-        );
+    const fetchComments = async () => {
+      if (vader) {
+        const selectedText = await new Promise((resolve) => {
+          chrome.storage.local.get(["selectedText"], function (result) {
+            resolve(result.selectedText);
+          });
+        });
+
+        setSelectedText(selectedText || "");
+        const intensity =
+          vader.SentimentIntensityAnalyzer.polarity_scores(selectedText);
         const compound = intensity.compound * 100;
         const [text, color] = sentimentScoreToText(compound);
         setSentimentText(text);
         setSelectedTextColor(color);
-      });
 
-      chrome.storage.local.get(["allComments"], function (result) {
-        setAllComments(result.allComments || []);
+        const allComments = await new Promise((resolve) => {
+          chrome.storage.local.get(["allComments"], function (result) {
+            resolve(result.allComments);
+          });
+        });
+
+        setAllComments(allComments || []);
         let total_compound = 0; // Sum of all compound scores
         let sentisComp = [];
-        for (let i = 0; i < result.allComments.length; i++) {
+        for (let i = 0; i < allComments.length; i++) {
           const intensity = vader.SentimentIntensityAnalyzer.polarity_scores(
-            result.allComments[i]
+            allComments[i]
           );
           total_compound += intensity.compound * 100; // Add each compound score to the total
           sentisComp.push(intensity.compound * 100);
         }
-        const avg_compound = total_compound / result.allComments.length; // Calculate average
-        const [text, color] = sentimentScoreToText(avg_compound);
-        setThreadSentiment(text);
-        setThreadSentimentColor(color);
+        const avg_compound = total_compound / allComments.length; // Calculate average
+        const [threadText, threadColor] = sentimentScoreToText(avg_compound);
+        setThreadSentiment(threadText);
+        setThreadSentimentColor(threadColor);
         setSentimentsCompound(sentisComp);
-      });
-    }
+      }
+    };
+
+    fetchComments();
   }, [vader]);
+
+  const analyzeThread = async () => {
+    await new Promise((resolve) => {
+      chrome.tabs.query({ active: true, currentWindow: true }, function (tabs) {
+        chrome.tabs.sendMessage(tabs[0].id, { action: "analyzeThread" });
+        resolve();
+      });
+    });
+
+    if (vader) {
+      const selectedText = await new Promise((resolve) => {
+        chrome.storage.local.get(["selectedText"], function (result) {
+          resolve(result.selectedText);
+        });
+      });
+
+      setSelectedText(selectedText || "");
+      const intensity =
+        vader.SentimentIntensityAnalyzer.polarity_scores(selectedText);
+      const compound = intensity.compound * 100;
+      const [text, color] = sentimentScoreToText(compound);
+      setSentimentText(text);
+      setSelectedTextColor(color);
+
+      const allComments = await new Promise((resolve) => {
+        chrome.storage.local.get(["allComments"], function (result) {
+          resolve(result.allComments);
+        });
+      });
+
+      setAllComments(allComments || []);
+      let total_compound = 0; // Sum of all compound scores
+      let sentisComp = [];
+      for (let i = 0; i < allComments.length; i++) {
+        const intensity = vader.SentimentIntensityAnalyzer.polarity_scores(
+          allComments[i]
+        );
+        total_compound += intensity.compound * 100; // Add each compound score to the total
+        sentisComp.push(intensity.compound * 100);
+      }
+      const avg_compound = total_compound / allComments.length; // Calculate average
+      const [threadText, threadColor] = sentimentScoreToText(avg_compound);
+      setThreadSentiment(threadText);
+      setThreadSentimentColor(threadColor);
+      setSentimentsCompound(sentisComp);
+    }
+  };
   return (
     <Box padding={2}>
+      <Tooltip
+        label="Wait for the page to fully load first then click."
+        fontSize="xs"
+      >
+        <Button ml={4} mt={4} size="sm" onClick={analyzeThread}>
+          Analyze Thread
+        </Button>
+      </Tooltip>
+
       <VStack>
         <Flex gap={2} mt={4} mb={-6} zIndex={2}>
           <Heading size="md">Overall Thread Sentiment:{"  "}</Heading>
@@ -115,7 +201,7 @@ function App() {
             {threadSentiment}
           </Heading>
         </Flex>
-        <Box width="100%" mt={-2} zIndex={1}>
+        <Box width="100%" zIndex={1}>
           <Plot
             data={data}
             layout={layout}
