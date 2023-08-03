@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 // import * as vader from "vader-sentiment";
 import { sentimentScoreToText } from "./utils/sentimentScoreToText";
-import { Box, Flex, Stack, Text } from "@chakra-ui/react";
+import { Box, Flex, Heading, Stack, Text, VStack } from "@chakra-ui/react";
 import { usePlotColors } from "./utils/useColors";
 import { populateLayout } from "./utils/layout";
 import Plot from "react-plotly.js";
@@ -49,19 +49,15 @@ function App() {
   ];
 
   const data = sentimentRanges.map((range) => {
-    const sentiments = sentimentsCompound.filter(
-      (sentiment) => sentiment > range.min && sentiment <= range.max
-    );
-
     return {
-      x: sentiments,
-      type: "histogram",
-      nbinsx: 50,
-      autobinx: false,
-      opacity: 0.7,
-      marker: {
-        color: range.color,
-      },
+      x: [range.label],
+      y: [
+        sentimentsCompound.filter(
+          (sentiment) => sentiment >= range.min && sentiment < range.max
+        ).length,
+      ],
+      type: "bar",
+      marker: { color: range.color },
       name: range.label,
     };
   });
@@ -109,15 +105,17 @@ function App() {
       });
     }
   }, [vader]);
-
   return (
-    <Box padding={4}>
-      <Stack>
-        <Flex>
-          <Text>Thread Sentiment:{"  "}</Text>
-          <Text color={threadSentimentColor}> {threadSentiment}</Text>
+    <Box padding={2}>
+      <VStack>
+        <Flex gap={2} mt={4} mb={-6} zIndex={2}>
+          <Heading size="md">Overall Thread Sentiment:{"  "}</Heading>
+          <Heading size="md" color={threadSentimentColor}>
+            {" "}
+            {threadSentiment}
+          </Heading>
         </Flex>
-        <Box width="100%">
+        <Box width="100%" mt={-2} zIndex={1}>
           <Plot
             data={data}
             layout={layout}
@@ -125,7 +123,7 @@ function App() {
             style={{ width: "100%" }}
           />
         </Box>
-      </Stack>
+      </VStack>
     </Box>
   );
 }
